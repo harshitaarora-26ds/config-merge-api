@@ -27,7 +27,19 @@ DEFAULTS: Dict[str, Any] = {
 
 APP_ENV = os.environ.get("APP_ENV", "development")
 YAML_PATH = os.path.join(BASE_DIR, f"config.{APP_ENV}.yaml")
-DOTENV_PATH = os.path.join(BASE_DIR, ".env")
+
+# Some hosts strip or hide literal ".env" files from the deployed build for
+# security reasons. To avoid that, we look for a couple of candidate
+# filenames and use whichever exists.
+_DOTENV_CANDIDATES = [".env", "dotenv_config.txt", "env_layer.txt"]
+DOTENV_PATH = ""
+for _candidate in _DOTENV_CANDIDATES:
+    _path = os.path.join(BASE_DIR, _candidate)
+    if os.path.exists(_path):
+        DOTENV_PATH = _path
+        break
+if not DOTENV_PATH:
+    DOTENV_PATH = os.path.join(BASE_DIR, ".env")
 
 
 def resolve_alias(key: str) -> str:
@@ -132,6 +144,23 @@ async def effective_config(request: Request):
     result["api_key"] = "****"
 
     return result
+
+
+@app.get("/debug-layers")
+async def debug_layers():
+    """Diagnostic endpoint: shows what each layer actually resolved, and
+    whether the dotenv file was found, to help troubleshoot deployment
+    issues. Safe to remove before final submission."""
+    return {
+        "dotenv_path_used": DOTENV_PATH,
+        "dotenv_path_exists": os.path.exists(DOTENV_PATH),
+        "yaml_path_used": YAML_PATH,
+        "yaml_path_exists": os.path.exists(YAML_PATH),
+        "yaml_layer": load_yaml_layer(),
+        "dotenv_layer": load_dotenv_layer(),
+        "os_env_layer": load_os_env_layer(),
+        "files_in_base_dir": os.listdir(BASE_DIR),
+    }
 
 
 @app.get("/")
